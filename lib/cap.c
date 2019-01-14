@@ -437,10 +437,10 @@ discover_monitoring(struct pqos_cap_mon **r_mon,
                 num_events++;
 
         /**
-         * This means we can program LLC misses too
+         * This means we can program LLC misses and references too
          */
         if (((cpuid_0xa.eax >> 8) & 0xff) > 1)
-                num_events++;
+                num_events+=2;
 
         /**
          * Allocate memory for detected events and
@@ -478,9 +478,12 @@ discover_monitoring(struct pqos_cap_mon **r_mon,
                 add_monitoring_event(mon, 0, PQOS_PERF_EVENT_IPC,
                                      0, 0, num_events);
 
-        if (((cpuid_0xa.eax >> 8) & 0xff) > 1)
+        if (((cpuid_0xa.eax >> 8) & 0xff) > 1){
                 add_monitoring_event(mon, 0, PQOS_PERF_EVENT_LLC_MISS,
                                      0, 0, num_events);
+                add_monitoring_event(mon, 0, PQOS_PERF_EVENT_LLC_REFERENCE,
+                                     0, 0, num_events);
+        }
 
         (*r_mon) = mon;
         return PQOS_RETVAL_OK;
@@ -1421,7 +1424,7 @@ discover_os_monitoring(struct pqos_cap_mon *mon,
 		 * Assume support of perf events
 		 */
 		if (event->type == PQOS_PERF_EVENT_LLC_MISS ||
-		    event->type == PQOS_PERF_EVENT_IPC) {
+		    event->type == PQOS_PERF_EVENT_IPC || event->type == PQOS_PERF_EVENT_LLC_REFERENCE) {
 			event->os_support = PQOS_OS_MON_PERF;
 			continue;
 		}

@@ -54,7 +54,7 @@
 #define OS_MON_EVT_IDX_CYC       5
 #define OS_MON_EVT_IDX_IPC       6
 #define OS_MON_EVT_IDX_LLC_MISS  7
-
+#define OS_MON_EVT_IDX_LLC_REFERENCE 8
 /**
  * ---------------------------------------
  * Local data structures
@@ -128,6 +128,10 @@ static struct perf_mon_supported_event {
           .desc = "LLC Misses",
           .event = PQOS_PERF_EVENT_LLC_MISS,
           .supported = 1 }, /**< assumed support */
+	{ .name="",
+	  .desc = "LLC References",
+	  .event = PQOS_PERF_EVENT_LLC_REFERENCE,
+	  .supported = 1 },
 };
 
 /**
@@ -176,6 +180,8 @@ get_supported_event(const enum pqos_mon_event event)
                 return &events_tab[OS_MON_EVT_IDX_IPC];
         case PQOS_PERF_EVENT_LLC_MISS:
                 return &events_tab[OS_MON_EVT_IDX_LLC_MISS];
+        case PQOS_PERF_EVENT_LLC_REFERENCE:
+		return &events_tab[OS_MON_EVT_IDX_LLC_REFERENCE];
         default:
                 ASSERT(0);
                 return NULL;
@@ -244,6 +250,12 @@ set_arch_event_attrs(enum pqos_mon_event *events)
         events_tab[OS_MON_EVT_IDX_LLC_MISS].attrs.config =
                 PERF_COUNT_HW_CACHE_MISSES;
         *events |= (enum pqos_mon_event)PQOS_PERF_EVENT_LLC_MISS;
+
+	/* Set LLC references event attributes */
+        events_tab[OS_MON_EVT_IDX_LLC_REFERENCE].attrs = attr;
+        events_tab[OS_MON_EVT_IDX_LLC_REFERENCE].attrs.config =
+                PERF_COUNT_HW_CACHE_REFERENCES;
+        *events |= (enum pqos_mon_event)PQOS_PERF_EVENT_LLC_REFERENCE;
 
         /* Set retired instructions event attributes */
         events_tab[OS_MON_EVT_IDX_INST].attrs = attr;
@@ -504,6 +516,8 @@ perf_mon_get_fd(struct pqos_mon_perf_ctx *ctx, const enum pqos_mon_event event)
                 return &ctx->fd_mbt;
         case PQOS_PERF_EVENT_LLC_MISS:
                 return &ctx->fd_llc_misses;
+        case PQOS_PERF_EVENT_LLC_REFERENCE:
+                return &ctx->fd_llc_references;
         case (enum pqos_mon_event)PQOS_PERF_EVENT_CYCLES:
                 return &ctx->fd_cyc;
         case (enum pqos_mon_event)PQOS_PERF_EVENT_INSTRUCTIONS:
@@ -683,6 +697,14 @@ perf_mon_poll(struct pqos_mon_data *group, enum pqos_mon_event event)
                 group->values.llc_misses_delta =
                         get_delta(old_value, group->values.llc_misses);
                 break;
+
+        case PQOS_PERF_EVENT_LLC_REFERENCE:
+                old_value = group->values.llc_references;
+                group->values.llc_references = value;
+                group->values.llc_references_delta =
+                        get_delta(old_value, group->values.llc_references);
+                break;
+
         case (enum pqos_mon_event)PQOS_PERF_EVENT_CYCLES:
                 old_value = group->values.ipc_unhalted;
                 group->values.ipc_unhalted = value;

@@ -251,6 +251,7 @@ enum pqos_mon_event {
         RESERVED2 = 0x2000,
         PQOS_PERF_EVENT_LLC_MISS = 0x4000, /**< LLC misses */
         PQOS_PERF_EVENT_IPC    = 0x8000, /**< instructions per clock */
+        PQOS_PERF_EVENT_LLC_REFERENCE = 0x10000,
 };
 
 /**
@@ -396,6 +397,8 @@ struct pqos_event_values {
         double ipc;                     /**< retired instructions / cycles */
         uint64_t llc_misses;            /**< LLC misses - reading */
         uint64_t llc_misses_delta;      /**< LLC misses - delta */
+        uint64_t llc_references;
+        uint64_t llc_references_delta;
 };
 
 /**
@@ -417,6 +420,7 @@ struct pqos_mon_perf_ctx {
         int fd_inst;
         int fd_cyc;
         int fd_llc_misses;
+        int fd_llc_references;
 };
 
 /**
@@ -1251,6 +1255,9 @@ pqos_mon_get_event_value(void * const value,
         case PQOS_PERF_EVENT_LLC_MISS:
                 *p_64 = group->values.llc_misses_delta;
                 break;
+        case PQOS_PERF_EVENT_LLC_REFERENCE:
+		*p_64 = group->values.llc_references_delta;
+        	break;
         default:
                 return PQOS_RETVAL_PARAM;
 	}

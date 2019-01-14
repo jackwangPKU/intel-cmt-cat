@@ -904,12 +904,12 @@ pqos_mon_start(const unsigned num_cores,
          */
         if (event & (~(PQOS_MON_EVENT_L3_OCCUP | PQOS_MON_EVENT_LMEM_BW |
                        PQOS_MON_EVENT_TMEM_BW | PQOS_MON_EVENT_RMEM_BW |
-                       PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS)))
+                       PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_LLC_REFERENCE)))
                 return PQOS_RETVAL_PARAM;
 
         if ((event & (PQOS_MON_EVENT_L3_OCCUP | PQOS_MON_EVENT_LMEM_BW |
                       PQOS_MON_EVENT_TMEM_BW | PQOS_MON_EVENT_RMEM_BW)) == 0 &&
-            (event & (PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS)) != 0)
+            (event & (PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_LLC_REFERENCE)) != 0)
                 return PQOS_RETVAL_PARAM;
 
         _pqos_api_lock();
@@ -1050,12 +1050,12 @@ pqos_mon_start_pids(const unsigned num_pids,
          */
         if (event & (~(PQOS_MON_EVENT_L3_OCCUP | PQOS_MON_EVENT_LMEM_BW |
                        PQOS_MON_EVENT_TMEM_BW | PQOS_MON_EVENT_RMEM_BW |
-                       PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS)))
+                       PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_LLC_REFERENCE)))
                 return PQOS_RETVAL_PARAM;
 
         if ((event & (PQOS_MON_EVENT_L3_OCCUP | PQOS_MON_EVENT_LMEM_BW |
                       PQOS_MON_EVENT_TMEM_BW | PQOS_MON_EVENT_RMEM_BW)) == 0 &&
-            (event & (PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS)) != 0)
+            (event & (PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_LLC_REFERENCE)) != 0)
                 return PQOS_RETVAL_PARAM;
 
         _pqos_api_lock();

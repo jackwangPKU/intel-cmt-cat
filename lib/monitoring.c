@@ -108,11 +108,15 @@
 #define IA32_MSR_FIXED_CTR_CTRL       0x38D
 #define IA32_MSR_PERF_GLOBAL_CTRL     0x38F
 #define IA32_MSR_PMC0                 0x0C1
+#define IA32_MSR_PMC1			0x0C2
 #define IA32_MSR_PERFEVTSEL0          0x186
+#define IA32_MSR_PERFEVTSEL1		0x187
 
 #define IA32_EVENT_LLC_MISS_MASK      0x2EULL
 #define IA32_EVENT_LLC_MISS_UMASK     0x41ULL
 
+#define IA32_EVENT_LLC_REFERENCE_MASK	0x2EULL
+#define IA32_EVENT_LLC_REFERENCE_UMASK	0x4FULL
 /**
  * Special RMID - after reset all cores are associated with it.
  *
@@ -735,6 +739,29 @@ pqos_core_poll(struct pqos_mon_data *p)
                 pv->llc_misses_delta = missed - pv->llc_misses;
                 pv->llc_misses = missed;
         }
+        if (p->event & PQOS_PERF_EVENT_LLC_REFERENCE) {
+                /**
+                 * If multiple cores monitored in one group
+                 * then we have to accumulate the values in the group.
+                 */
+                uint64_t referenced = 0;
+                unsigned n;
+
+                for (n = 0; n < p->num_cores; n++) {
+                        uint64_t tmp = 0;
+                        int ret = msr_read(p->cores[n],
+                                           IA32_MSR_PMC1, &tmp);
+                        if (ret != MACHINE_RETVAL_OK) {
+                                retval = PQOS_RETVAL_ERROR;
+                                goto pqos_core_poll__exit;
+                        }
+                        referenced += tmp;
+                }
+
+                pv->llc_references_delta = referenced - pv->llc_references;
+                pv->llc_references = referenced;
+        }
+
         if (!p->valid_mbm_read) {
                 /* Report zero memory bandwidth with first read */
                 pv->mbm_remote_delta = 0;
@@ -774,6 +801,10 @@ ia32_perf_counter_start(const unsigned num_cores,
 
         if (event & PQOS_PERF_EVENT_LLC_MISS)
                 global_ctrl_mask |= 0x1ULL;     /**< programmable counter 0 */
+        if (event & PQOS_PERF_EVENT_LLC_REFERENCE)
+                global_ctrl_mask |= 0x2ULL;     /**< programmable counter 1 */
+
+
 
         /**
          * Fixed counters are used for IPC calculations.
@@ -835,6 +866,20 @@ ia32_perf_counter_start(const unsigned num_cores,
                                 break;
                 }
 
+                if (event & PQOS_PERF_EVENT_LLC_REFERENCE) {
+                        const uint64_t evtsel1_reference = IA32_EVENT_LLC_REFERENCE_MASK |
+                                (IA32_EVENT_LLC_REFERENCE_UMASK << 8) |
+                                (1ULL << 16) | (1ULL << 17) | (1ULL << 22);
+
+                        ret = msr_write(cores[i], IA32_MSR_PMC1, 0);
+                        if (ret != MACHINE_RETVAL_OK)
+                                break;
+                        ret = msr_write(cores[i], IA32_MSR_PERFEVTSEL1,
+                                        evtsel1_reference);
+                        if (ret != MACHINE_RETVAL_OK)
+                                break;
+                }
+
                 ret = msr_write(cores[i],
                                 IA32_MSR_PERF_GLOBAL_CTRL, global_ctrl_mask);
                 if (ret != MACHINE_RETVAL_OK)
@@ -867,7 +912,7 @@ ia32_perf_counter_stop(const unsigned num_cores,
 
         ASSERT(cores != NULL && num_cores > 0);
 
-        if (!(event & (PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_IPC)))
+        if (!(event & (PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_IPC | PQOS_PERF_EVENT_LLC_REFERENCE)))
                 return retval;
 
         for (i = 0; i < num_cores; i++) {
@@ -977,7 +1022,7 @@ hw_mon_start(const unsigned num_cores,
                         ret = rmid_alloc(cluster,
                                          (enum pqos_mon_event)(event &
                                          (~(PQOS_PERF_EVENT_IPC |
-                                         PQOS_PERF_EVENT_LLC_MISS))),
+                                         PQOS_PERF_EVENT_LLC_MISS | PQOS_PERF_EVENT_LLC_REFERENCE))),
                                          &ctxs[num_ctxs].rmid);
                         if (ret != PQOS_RETVAL_OK) {
                                 retval = ret;

@@ -788,6 +788,10 @@ int monitor_setup(const struct pqos_cpuinfo *cpu_info,
                                 if (all_core_evts & PQOS_PERF_EVENT_LLC_MISS)
                                         cg->events |= (enum pqos_mon_event)
                                                 PQOS_PERF_EVENT_LLC_MISS;
+                                if (all_core_evts & PQOS_PERF_EVENT_LLC_REFERENCE)
+                                        cg->events |= (enum pqos_mon_event)
+                                                PQOS_PERF_EVENT_LLC_REFERENCE;
+
                         }
 
                         ret = pqos_mon_start(cg->num_cores, cg->cores,
@@ -836,6 +840,10 @@ int monitor_setup(const struct pqos_cpuinfo *cpu_info,
                                 if (all_pid_evts & PQOS_PERF_EVENT_LLC_MISS)
                                         pg->events |= (enum pqos_mon_event)
                                                 PQOS_PERF_EVENT_LLC_MISS;
+                                if (all_pid_evts & PQOS_PERF_EVENT_LLC_REFERENCE)
+                                        pg->events |= (enum pqos_mon_event)
+                                                PQOS_PERF_EVENT_LLC_REFERENCE;
+
                         }
                         ret = pqos_mon_start_pids(pg->num_pids, pg->pids,
                                                   pg->events, (void *)pg->desc,
@@ -2066,10 +2074,12 @@ print_text_row(FILE *fp,
                            sel_events_max & PQOS_MON_EVENT_RMEM_BW);
 
         if (!process_mode())
-                fprintf(fp, "\n%8.8s %5.2f %7uk%s",
+                fprintf(fp, "\n%8.8s %5.2f %7uk %9uk %9.2lf %s",
                         (char *)mon_data->context,
                         mon_data->values.ipc,
                         (unsigned)mon_data->values.llc_misses_delta/1000,
+                        (unsigned)mon_data->values.llc_references_delta/1000,
+                        1.0*(unsigned)mon_data->values.llc_misses_delta/(unsigned)mon_data->values.llc_references_delta,
                         data);
         else {
                 memset(core_list, 0, sizeof(core_list));
@@ -2080,10 +2090,12 @@ print_text_row(FILE *fp,
                         strncat(core_list, "err", sizeof(core_list) - 1);
                 }
 
-                fprintf(fp, "\n%8.8s %8.8s %6.2f %7uk%s",
+                fprintf(fp, "\n%8.8s %8.8s %6.2f %7uk %9uk %9.2lf %s",
                         (char *)mon_data->context, core_list,
                         mon_data->values.ipc,
                         (unsigned)mon_data->values.llc_misses_delta/1000,
+                        (unsigned)mon_data->values.llc_references_delta/1000,
+                        1.0*(unsigned)mon_data->values.llc_misses_delta/(unsigned)mon_data->values.llc_references_delta,
                         data);
         }
 }
@@ -2262,9 +2274,9 @@ build_header_row(char *hdr, const size_t sz_hdr,
 
         if (istext) {
                 if (!process_mode())
-                        strncpy(hdr, "    CORE   IPC   MISSES", sz_hdr - 1);
+                        strncpy(hdr, "    CORE   IPC   MISSES   ACCESSES   MISSRATE", sz_hdr - 1);
                 else
-                        strncpy(hdr, "     PID     CORE    IPC   MISSES",
+                        strncpy(hdr, "     PID     CORE    IPC   MISSES   ACCESSES   MISSRATE",
                                 sz_hdr - 1);
                 if (sel_events_max & PQOS_MON_EVENT_L3_OCCUP)
                         strncat(hdr, "     LLC[KB]", sz_hdr - strlen(hdr) - 1);
@@ -2390,7 +2402,6 @@ void monitor_loop(void)
 
         mon_number = get_mon_arrays(&mon_grps, &mon_data);
         display_num = mon_number;
-
         /**
          * Capture ctrl-c to gracefully stop the loop
          */
@@ -2451,7 +2462,6 @@ void monitor_loop(void)
                 else if (!process_mode())
                         qsort(mon_data, mon_number, sizeof(mon_data[0]),
                               mon_qsort_coreid_cmp_asc);
-
                 /**
                  * Get time string
                  */

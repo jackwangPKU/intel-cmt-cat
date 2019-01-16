@@ -62,6 +62,7 @@
 #define PID_CPU_TIME_DELAY_USEC (1200000) /**< delay for cpu stats */
 #define TOP_PROC_MAX (10) /**< maximum number of top-pids to be handled*/
 
+#define DATA_SIZE 8
 /**
  * Local data structures
  *
@@ -178,7 +179,73 @@ struct slist {
         struct slist *next; /**< ptr to next list element */
 };
 
-/**
+/*
+ * clustering iteration
+*/
+void clus_iter(double* bw, int* c, int n){
+	//new central point
+	double a=0,b=0;
+	int an=0,bn=0;
+	int i=0;
+	while(i<n){
+		if(c[i]==0) {
+			a+=bw[i];
+			an++;	
+		}
+		else {
+			b+=bw[i];
+			bn++;
+		}
+		i++;
+	}
+	a=a/an;b=b/bn;
+	double tmp=(a+b)/2;
+	int conv=1;
+	while(i<n){
+		if(bw[i]<tmp){
+			if(c[i]==0);
+			else{
+				c[i]=0;conv=0;
+			}
+		}
+		else{
+			if(c[i]==1);
+			else{
+				c[i]=1;conv=0;
+			}
+		}
+		i++;
+	}
+	if(conv) return;
+	else clus_iter(bw, c, n);
+}
+/* 
+ * one-dimension (BW) clustering k==2
+*/
+void onedim_cluster(double* bw, int* c, int n){
+	
+	//initial central point min and max
+	double min=100000;
+	double max=0;
+	int i=0;
+	while(i<n){
+		if(bw[i]<min) min=bw[i];
+		if(bw[i]>max) max=bw[i];
+		i++;
+	}
+	//get distance and classify
+	double tmp=(min+max)/2;
+	i=0;
+	while(i<n){
+		if(bw[i]<tmp)
+			c[i]=0;
+		else	c[i]=1;
+		i++;
+	}
+	clus_iter(bw, c, n);	
+}
+
+/*
  * @brief Scale byte value up to KB
  *
  * @param bytes value to be scaled up
@@ -2439,6 +2506,14 @@ void monitor_loop(void)
 
         gettimeofday(&tv_start, NULL);
         tv_s = tv_start;
+        // In this work we run one process on each physical core and use taskset to limit their core among 0-7, so we just need to monitor core 0-7.
+        display_num=8;
+	//data struct for cluster and b/w throttling
+	double BW[DATA_SIZE];
+	double MR[DATA_SIZE];
+	double pre_ipc[DATA_SIZE];
+	int core_class[DATA_SIZE]={0};
+	int num=DATA_SIZE;
 
         while (!stop_monitoring_loop) {
                 struct timeval tv_e;
@@ -2486,10 +2561,15 @@ void monitor_loop(void)
                         double llc = bytes_to_kb(pv->llc);
                         double mbr = bytes_to_mb(pv->mbm_remote_delta) * coeff;
                         double mbl = bytes_to_mb(pv->mbm_local_delta) * coeff;
-
+                        //assignment
+                        BW[i]=mbl;
+                        pre_ipc[i]=pv->ipc;
+                        MR[i]=1.0*pv->llc_misses_delta/pv->llc_references_delta;
+/*
                         if (istext)
                                 print_text_row(fp_monitor, mon_data[i],
                                                llc, mbr, mbl);
+*/
                         if (isxml)
                                 print_xml_row(fp_monitor, cb_time, mon_data[i],
                                               llc, mbr, mbl);
@@ -2501,7 +2581,11 @@ void monitor_loop(void)
                         fputs("\n", fp_monitor);
 
                 fflush(fp_monitor);
-
+                //start clustering
+		onedim_cluster(BW,core_class,num);
+		//printf("%d %d %d %d %d %d %d %d\n", core_class[0], core_class[1], core_class[2], core_class[3], core_class[4], core_class[5], core_class[6], core_class[7]);
+		//printf("%lf %lf %lf %lf %lf %lf %lf %lf\n", BW[0], BW[1], BW[2], BW[3], BW[4], BW[5], BW[6], BW[7]);
+                
                 gettimeofday(&tv_e, NULL);
 
                 if (stop_monitoring_loop)

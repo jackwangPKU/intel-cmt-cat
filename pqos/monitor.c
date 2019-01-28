@@ -2604,13 +2604,18 @@ void monitor_loop(void)
 			j+=sprintf(tmp+j,"pqos -e \"");
 			for(i=0;i<display_num;i++){
 				if(core_class[i]==1)
-				j+=sprintf(tmp+j,"mba:%d=%d;",i,20);
+				j+=sprintf(tmp+j,"mba:%d=%d;",i,10);
 			}
 			j+=sprintf(tmp+j,"\"");
 			//printf("%s\n",tmp);
 			in_phase=2;
 			system(tmp);
 		}
+		else if (in_phase==2){
+			//wait until emba work
+			in_phase=3;
+		}
+		/*
 		else if(in_phase==2){
 			//measure ipc and calculate ws. if ws is improved continue else set back and return. phase = 3
 			double cur_ws=0;
@@ -2650,6 +2655,7 @@ void monitor_loop(void)
 			}
 			ws=cur_ws;
 		}
+		*/
 		else if(in_phase==3){
 			int phase_change=0;
 			for(i=0;i<display_num;i++){
@@ -2671,8 +2677,8 @@ void monitor_loop(void)
 				system("pqos -e \"mba:0=100;mba:1=100;mba:2=100;mba:3=100;mba:4=100;mba:5=100;mba:6=100;mba:7=100\"");
 			}	
 		}
-		for(i=0;i<display_num;i++){printf("\nBase_ipc %d: %lf",i,base_ipc[i]);}
-		printf("\nWS:%lf\n",ws);
+		//for(i=0;i<display_num;i++){printf("\nBase_ipc %d: %lf",i,base_ipc[i]);}
+		//printf("\nWS:%lf\n",ws);
 		//printf("%d %d %d %d %d %d %d %d\n", core_class[0], core_class[1], core_class[2], core_class[3], core_class[4], core_class[5], core_class[6], core_class[7]);
 		//printf("%lf %lf %lf %lf %lf %lf %lf %lf\n", BW[0], BW[1], BW[2], BW[3], BW[4], BW[5], BW[6], BW[7]);
                 //system("pqos -e mba:1=50");

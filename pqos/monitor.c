@@ -2518,7 +2518,7 @@ void monitor_loop(void)
 	int core_class[DATA_SIZE]={0};
 	int num=DATA_SIZE;
 	int in_phase=0;
-	int throttle_value[4]={100,30,20,10};
+	int throttle_value[3]={30,20,10};
 	int throttle_index=0;
 	double ws=1;
         while (!stop_monitoring_loop) {
@@ -2578,8 +2578,8 @@ void monitor_loop(void)
                         MR[i]=1.0*pv->llc_misses_delta/pv->llc_references_delta;
                         if (istext)
                                 print_text_row(fp_monitor, mon_data[i],
-                                               llc, mbr, mbl);
-                        if (isxml)
+                                               llc, mbr, mbl);   
+		        if (isxml)
                                 print_xml_row(fp_monitor, cb_time, mon_data[i],
                                               llc, mbr, mbl);
                         if (iscsv)
@@ -2596,7 +2596,6 @@ void monitor_loop(void)
 				base_ipc[i]=ipc[i];
 			in_phase=1;
 		}
-
 		else if(in_phase==1){
 			onedim_cluster(BW,core_class,num);
 			throttle_index=1;
@@ -2605,7 +2604,7 @@ void monitor_loop(void)
 			j+=sprintf(tmp+j,"pqos -e \"");
 			for(i=0;i<display_num;i++){
 				if(core_class[i]==1)
-				j+=sprintf(tmp+j,"mba:%d=%d;",i,30);
+				j+=sprintf(tmp+j,"mba:%d=%d;",i,20);
 			}
 			j+=sprintf(tmp+j,"\"");
 			//printf("%s\n",tmp);
@@ -2624,7 +2623,7 @@ void monitor_loop(void)
 			j+=sprintf(tmp+j,"pqos -e \"");
 
 			if(cur_ws>ws){//continue
-				if(throttle_index==3)
+				if(throttle_index==2)
 					in_phase=3;
 				else{
 					throttle_index++;
@@ -2672,6 +2671,8 @@ void monitor_loop(void)
 				system("pqos -e \"mba:0=100;mba:1=100;mba:2=100;mba:3=100;mba:4=100;mba:5=100;mba:6=100;mba:7=100\"");
 			}	
 		}
+		for(i=0;i<display_num;i++){printf("\nBase_ipc %d: %lf",i,base_ipc[i]);}
+		printf("\nWS:%lf\n",ws);
 		//printf("%d %d %d %d %d %d %d %d\n", core_class[0], core_class[1], core_class[2], core_class[3], core_class[4], core_class[5], core_class[6], core_class[7]);
 		//printf("%lf %lf %lf %lf %lf %lf %lf %lf\n", BW[0], BW[1], BW[2], BW[3], BW[4], BW[5], BW[6], BW[7]);
                 //system("pqos -e mba:1=50");

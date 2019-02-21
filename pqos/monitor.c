@@ -182,18 +182,18 @@ struct slist {
 /*
  * clustering iteration
 */
-void clus_iter(double* bw, int* c, int n){
+void clus_iter(double* bw, int* c, int* index, int n, int level){
 	//new central point
 	double a=0,b=0;
 	int an=0,bn=0;
 	int i=0;
 	while(i<n){
-		if(c[i]==0) {
-			a+=bw[i];
+		if(c[index[i]]==level) {
+			a+=bw[index[i]];
 			an++;	
 		}
 		else {
-			b+=bw[i];
+			b+=bw[index[i]];
 			bn++;
 		}
 		i++;
@@ -202,47 +202,48 @@ void clus_iter(double* bw, int* c, int n){
 	double tmp=(a+b)/2;
 	int conv=1;
 	while(i<n){
-		if(bw[i]<tmp){
-			if(c[i]==0);
+		if(bw[index[i]]<tmp){
+			if(c[index[i]]==level);
 			else{
-				c[i]=0;conv=0;
+				c[index[i]]=level;conv=0;
 			}
 		}
 		else{
-			if(c[i]==1);
+			if(c[index[i]]!=level);
 			else{
-				c[i]=1;conv=0;
+				c[index[i]]=level-1;conv=0;
 			}
 		}
 		i++;
 	}
 	if(conv) return;
-	else clus_iter(bw, c, n);
+	else clus_iter(bw, c, index, n, level);
 }
 /* 
  * one-dimension (BW) clustering k==2
 */
-void onedim_cluster(double* bw, int* c, int n){
+void onedim_cluster(double* bw, int* c, int* index, int n, int level){
 	
 	//initial central point min and max
-	double min=100000;
+	if(n<=1) return;
+	
+	double min=bw[index[0]];
 	double max=0;
 	int i=0;
 	while(i<n){
-		if(bw[i]<min) min=bw[i];
-		if(bw[i]>max) max=bw[i];
+		if(bw[index[i]]<min) min=bw[index[i]];
+		if(bw[index[i]]>max) max=bw[index[i]];
 		i++;
 	}
 	//get distance and classify
 	double tmp=(min+max)/2;
 	i=0;
 	while(i<n){
-		if(bw[i]<tmp)
-			c[i]=0;
-		else	c[i]=1;
+		if(bw[index[i]]<tmp)
+			c[index[i]]=level;
 		i++;
 	}
-	clus_iter(bw, c, n);	
+	clus_iter(bw, c, index, n, level);	
 }
 
 /*
@@ -2510,17 +2511,21 @@ void monitor_loop(void)
         display_num=8;
 	//data struct for cluster and b/w throttling
 	double BW[DATA_SIZE];
-	double BW_pre[DATA_SIZE];
+	double pre_BW[DATA_SIZE];
 	double MR[DATA_SIZE];
 	double pre_ipc[DATA_SIZE];
 	double ipc[DATA_SIZE];
 	double base_ipc[DATA_SIZE];
 	int core_class[DATA_SIZE]={0};
-	int num=DATA_SIZE;
+	int num=0;
 	int in_phase=0;
-	int throttle_value[3]={30,20,10};
+	int throttle_value[7]={100,60,50,40,30,20,10};
 	int throttle_index=0;
-	double ws=1;
+	double ws=8;
+	double progress =1;
+	int index[DATA_SIZE]={0,1,2,3,4,5,6,7};
+	char tmp[300];
+
         while (!stop_monitoring_loop) {
                 struct timeval tv_e;
                 struct tm *ptm = NULL;
@@ -2560,11 +2565,7 @@ void monitor_loop(void)
 
                 if (istext)
                         fprintf(fp_monitor, "TIME %s\n%s", cb_time, header);
-		if(in_phase!=0)
-			for(i=0;i<display_num;i++){
-				pre_ipc[i]=ipc[i];
-				BW_pre[i]=BW[i];
-			}
+
                 for (i = 0; i < display_num; i++) {
                         const struct pqos_event_values *pv =
                                  &mon_data[i]->values;
@@ -2572,6 +2573,9 @@ void monitor_loop(void)
                         double mbr = bytes_to_mb(pv->mbm_remote_delta) * coeff;
                         double mbl = bytes_to_mb(pv->mbm_local_delta) * coeff;
                         //assignment
+                        pre_ipc[i]=ipc[i];
+			pre_BW[i]=BW[i];
+
                         BW[i]=mbl;
 			ipc[i]=pv->ipc;
 					
@@ -2590,98 +2594,157 @@ void monitor_loop(void)
                         fputs("\n", fp_monitor);
 
                 fflush(fp_monitor);
-                //start clustering
-                if(in_phase==0){
-			for(i=0;i<display_num;i++)
-				base_ipc[i]=ipc[i];
-			in_phase=1;
-		}
-		else if(in_phase==1){
-			onedim_cluster(BW,core_class,num);
-			throttle_index=1;
-			char tmp[300];
+		
+		//phase detection
+		
+		if(BW[i]-pre_BW[i]>0.5*pre_BW[i] || pre_BW[i]-BW[i]>0.5*pre_BW[i]){
+			//start scheduling
+
+			//1.initial: reset mba scheme and record base ipc
 			int j=0;
-			j+=sprintf(tmp+j,"pqos -e \"");
-			for(i=0;i<display_num;i++){
-				if(core_class[i]==1)
-				j+=sprintf(tmp+j,"mba:%d=%d;",i,10);
-			}
-			j+=sprintf(tmp+j,"\"");
-			//printf("%s\n",tmp);
-			in_phase=2;
-			system(tmp);
-		}
-		else if (in_phase==2){
-			//wait until emba work
-			in_phase=3;
-		}
-		/*
-		else if(in_phase==2){
-			//measure ipc and calculate ws. if ws is improved continue else set back and return. phase = 3
-			double cur_ws=0;
-			for(i=0;i<display_num;i++)
-				cur_ws+=ipc[i]/base_ipc[i];
-			cur_ws/=8;
+                        j+=sprintf(tmp+j,"pqos -e \"");
+                        for(i=0;i<display_num;i++){
+                                j+=sprintf(tmp+j,"mba:%d=%d;",i,100);
+                        }
+                        j+=sprintf(tmp+j,"\"");
+                        system(tmp);
+
+			struct timespec req, rem;
+
+                        memset(&rem, 0, sizeof(rem));
+                        memset(&req, 0, sizeof(req));
+
+                        req.tv_nsec = 5000000L;
+                        if (nanosleep(&req, &rem) == -1) {
+                                if (stop_monitoring_loop)
+                                        break;
+                                req = rem;
+                                memset(&rem, 0, sizeof(rem));
+                                nanosleep(&req, &rem);
+                        }
 			
-			char tmp[300];
-			int j=0;
-			j+=sprintf(tmp+j,"pqos -e \"");
+			ret = pqos_mon_poll(mon_grps, mon_number);
+                			
+			if (ret != PQOS_RETVAL_OK) {
+                        	printf("Failed to poll monitoring data!\n");
+                        	free(mon_grps);
+                        	free(mon_data);
+                        	return;
+                	}
 
-			if(cur_ws>ws){//continue
-				if(throttle_index==2)
-					in_phase=3;
-				else{
-					throttle_index++;
-					for(i=0;i<display_num;i++){
-						if(core_class[i]==1)
-						j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[throttle_index]);
+                	memcpy(mon_data, mon_grps, mon_number * sizeof(mon_grps[0]));
+
+                	if (sel_mon_top_like)
+                        	qsort(mon_data, mon_number, sizeof(mon_data[0]),
+                              		mon_qsort_llc_cmp_desc);
+                	else if (!process_mode())
+                        	qsort(mon_data, mon_number, sizeof(mon_data[0]),
+					mon_qsort_coreid_cmp_asc);
+			for (i = 0; i < display_num; i++) {
+                        	const struct pqos_event_values *pv =
+                                 			&mon_data[i]->values;
+       				ipc[i]=pv->ipc;
+				base_ipc[i]=ipc[i];
+			}
+			
+			//2.hierarchical clustering
+			int level = 1;
+			int progress = 1;
+			int rest_num = 8;
+			while((progress > 0 || throttle_index > 0) && rest_num >=3 ){
+				throttle_index = 1;
+
+				onedim_cluster(BW,core_class,index,rest_num,level);
+                        	//3.heuristic throttling
+                        	rest_num = 0;
+				for(i=0;i<display_num;i++)
+					if(core_class[i]==level){
+						index[rest_num]=i;
+						rest_num++;
+					}
+
+						
+				while(progress > 0 && throttle_index < 7){
+                        		int j=0;
+                        		j+=sprintf(tmp+j,"pqos -e \"");
+                        		for(i=0;i<display_num;i++){
+                                		if(core_class[i]==level-1){
+                                			j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[throttle_index]);
 						}
-					j+=sprintf(tmp+j,"\"");
-					//printf("%s\n",tmp);
-					system(tmp);
-				}
-			}
-			else{
-				throttle_index--;
-				for(i=0;i<display_num;i++){
-					if(core_class[i]==1)
-					j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[throttle_index]);
-				}
-				j+=sprintf(tmp+j,"\"");
-				in_phase=3;
-				system(tmp);
-				//printf("%s\n",tmp);
+                        		}
+                        		j+=sprintf(tmp+j,"\"");
+                        		system(tmp);
+					throttle_index++;
+					//4.waiting for MBA taking effect and calculate progress
+					
+					//refresh	
+                			ret = pqos_mon_poll(mon_grps, mon_number);
+                			if (ret != PQOS_RETVAL_OK) {
+                        			printf("Failed to poll monitoring data!\n");
+                        			free(mon_grps);
+                        			free(mon_data);
+                        			return;
+                			}
+					//sleep
+					//struct timespec req, rem;
 
-			}
-			ws=cur_ws;
-		}
-		*/
-		else if(in_phase==3){
-			int phase_change=0;
-			for(i=0;i<display_num;i++){
-				if(core_class[i]==1){
-					if(BW[i]-BW_pre[i]>0.5*BW_pre[i] || BW_pre[i]-BW[i]>0.5*BW_pre[i]){
-						phase_change=1;
-						break;
-					}
+                        		memset(&rem, 0, sizeof(rem));
+                        		memset(&req, 0, sizeof(req));
+
+                        		req.tv_nsec = 5000000L;
+                                	        if (nanosleep(&req, &rem) == -1) {
+                                		if (stop_monitoring_loop)
+                                        		break;
+                                		req = rem;
+                                		memset(&rem, 0, sizeof(rem));
+                                		nanosleep(&req, &rem);
+                        		}
+					//poll current performance data
+					ret = pqos_mon_poll(mon_grps, mon_number);
+                			if (ret != PQOS_RETVAL_OK) {
+                        			printf("Failed to poll monitoring data!\n");
+                        			free(mon_grps);
+                        			free(mon_data);
+                        			return;
+                			}
+
+                			memcpy(mon_data, mon_grps, mon_number * sizeof(mon_grps[0]));
+
+                			if (sel_mon_top_like)
+                        			qsort(mon_data, mon_number, sizeof(mon_data[0]),
+                              				mon_qsort_llc_cmp_desc);
+                			else if (!process_mode())
+                        			qsort(mon_data, mon_number, sizeof(mon_data[0]),
+					        	mon_qsort_coreid_cmp_asc);
+					//record current ipc and calculate ws
+					double cur_ws=0;
+                			for (i = 0; i < display_num; i++) {
+                        			const struct pqos_event_values *pv =
+                                 			&mon_data[i]->values;
+       						ipc[i]=pv->ipc;
+						cur_ws += ipc[i]/base_ipc[i];	
+                       			}
+					progress= cur_ws -ws;
+					ws=cur_ws;
 				}
-				else if (core_class[i]==0){
-					if(BW[i]-BW_pre[i]>BW_pre[i]){
-						phase_change=1;
-						break;
-					}
+				if(progress < 0){
+					//roll back
+					throttle_index--;
+					int j=0;
+                        		j+=sprintf(tmp+j,"pqos -e \"");
+                        		for(i=0;i<display_num;i++){
+                                		if(core_class[i]==level-1)
+                                			j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[throttle_index]);
+                        		}
+                        		j+=sprintf(tmp+j,"\"");
+                        		system(tmp);
 				}
+				//enter the next level
+				level++;					
 			}
-			if(phase_change){
-				in_phase=0;
-				system("pqos -e \"mba:0=100;mba:1=100;mba:2=100;mba:3=100;mba:4=100;mba:5=100;mba:6=100;mba:7=100\"");
-			}	
+			
 		}
-		//for(i=0;i<display_num;i++){printf("\nBase_ipc %d: %lf",i,base_ipc[i]);}
-		//printf("\nWS:%lf\n",ws);
-		//printf("%d %d %d %d %d %d %d %d\n", core_class[0], core_class[1], core_class[2], core_class[3], core_class[4], core_class[5], core_class[6], core_class[7]);
-		//printf("%lf %lf %lf %lf %lf %lf %lf %lf\n", BW[0], BW[1], BW[2], BW[3], BW[4], BW[5], BW[6], BW[7]);
-                //system("pqos -e mba:1=50");
+
                 gettimeofday(&tv_e, NULL);
 
                 if (stop_monitoring_loop)

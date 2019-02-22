@@ -222,7 +222,7 @@ void clus_iter(double* bw, int* c, int* index, int n, int level){
 /* 
  * one-dimension (BW) clustering k==2
 */
-void onedim_cluster(double* bw, int* c, int* index, int n, int level){
+int onedim_cluster(double* bw, int* c, int* index, int n, int level){
 	
 	//initial central point min and max
 	if(n<=1) return;
@@ -235,6 +235,7 @@ void onedim_cluster(double* bw, int* c, int* index, int n, int level){
 		if(bw[index[i]]>max) max=bw[index[i]];
 		i++;
 	}
+	if(max-min <=100) return 0;
 	//get distance and classify
 	double tmp=(min+max)/2;
 	i=0;
@@ -243,7 +244,8 @@ void onedim_cluster(double* bw, int* c, int* index, int n, int level){
 			c[index[i]]=level;
 		i++;
 	}
-	clus_iter(bw, c, index, n, level);	
+	clus_iter(bw, c, index, n, level);
+	return 1;
 }
 
 /*
@@ -2596,10 +2598,24 @@ void monitor_loop(void)
                 fflush(fp_monitor);
 		
 		//phase detection
-		
-		if(BW[i]-pre_BW[i]>0.5*pre_BW[i] || pre_BW[i]-BW[i]>0.5*pre_BW[i]){
-			//start scheduling
+		printf("cur bw:\n");
+		for(i=0;i<display_num;i++)
+			printf("%lf,",BW[i]);
+		printf("\n");
+		printf("pre bw:\n");
+		for(i=0;i<display_num;i++)
+			printf("%lf,",pre_BW[i]);
+		printf("\n");
+		int phase_change=0;
+		for(i=0;i<display_num;i++)
+			if(BW[i]-pre_BW[i]>0.5*pre_BW[i] || pre_BW[i]-BW[i]>0.5*pre_BW[i]){
+				phase_change=1;
+				break;
+			}
 
+		if(phase_change){
+			//start scheduling
+			printf("start scheduling\n");
 			//1.initial: reset mba scheme and record base ipc
 			int j=0;
                         j+=sprintf(tmp+j,"pqos -e \"");
@@ -2645,16 +2661,18 @@ void monitor_loop(void)
                                  			&mon_data[i]->values;
        				ipc[i]=pv->ipc;
 				base_ipc[i]=ipc[i];
+				printf("ipc[%d]:%lf,",i,ipc[i]);
 			}
+			printf("\n");
 			
 			//2.hierarchical clustering
 			int level = 1;
-			int progress = 1;
+			double progress = 1;
 			int rest_num = 8;
 			while((progress > 0 || throttle_index > 0) && rest_num >=3 ){
 				throttle_index = 1;
 
-				onedim_cluster(BW,core_class,index,rest_num,level);
+				if(onedim_cluster(BW,core_class,index,rest_num,level)==0) break;
                         	//3.heuristic throttling
                         	rest_num = 0;
 				for(i=0;i<display_num;i++)
@@ -2718,13 +2736,17 @@ void monitor_loop(void)
 					        	mon_qsort_coreid_cmp_asc);
 					//record current ipc and calculate ws
 					double cur_ws=0;
+					
                 			for (i = 0; i < display_num; i++) {
                         			const struct pqos_event_values *pv =
                                  			&mon_data[i]->values;
        						ipc[i]=pv->ipc;
-						cur_ws += ipc[i]/base_ipc[i];	
+						cur_ws += ipc[i]/base_ipc[i];
+						printf("ipc[%d]:%lf,",i,ipc[i]);
                        			}
+					printf("\n");
 					progress= cur_ws -ws;
+					printf("progress:%lf\n",progress);
 					ws=cur_ws;
 				}
 				if(progress < 0){
@@ -2742,6 +2764,10 @@ void monitor_loop(void)
 				//enter the next level
 				level++;					
 			}
+			printf("class num: %d, class:",level);
+			int k=0;
+			for(k=0;k<display_num;k++){printf(" %d",core_class[k]);}
+			printf("\n");
 			
 		}
 

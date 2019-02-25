@@ -2523,11 +2523,13 @@ void monitor_loop(void)
 	int in_phase=0;
 	int throttle_value[7]={100,60,50,40,30,20,10};
 	int throttle_index=0;
-	double ws=8;
+	//double ws=8;
 	double progress =1;
 	int index[DATA_SIZE]={0,1,2,3,4,5,6,7};
 	char tmp[300];
-
+	int phase_change=0;
+	int pre_phase_change=0;
+	int first_time =1;
         while (!stop_monitoring_loop) {
                 struct timeval tv_e;
                 struct tm *ptm = NULL;
@@ -2598,7 +2600,8 @@ void monitor_loop(void)
                 fflush(fp_monitor);
 		
 		//phase detection
-		printf("cur bw:\n");
+		
+		/*printf("cur bw:\n");
 		for(i=0;i<display_num;i++)
 			printf("%lf,",BW[i]);
 		printf("\n");
@@ -2606,14 +2609,22 @@ void monitor_loop(void)
 		for(i=0;i<display_num;i++)
 			printf("%lf,",pre_BW[i]);
 		printf("\n");
-		int phase_change=0;
+		*/
+		phase_change=0;
+
 		for(i=0;i<display_num;i++)
 			if(BW[i]-pre_BW[i]>0.5*pre_BW[i] || pre_BW[i]-BW[i]>0.5*pre_BW[i]){
 				phase_change=1;
 				break;
 			}
-
-		if(phase_change){
+		/*if(first_time){
+			phase_change=0;first_time=0;
+		}
+		if(pre_phase_change){
+			pre_phase_change=0;
+		}
+		else */if (phase_change){
+			//pre_phase_change=1;		
 			//start scheduling
 			printf("start scheduling\n");
 			//1.initial: reset mba scheme and record base ipc
@@ -2630,7 +2641,7 @@ void monitor_loop(void)
                         memset(&rem, 0, sizeof(rem));
                         memset(&req, 0, sizeof(req));
 
-                        req.tv_nsec = 5000000L;
+                        req.tv_nsec = 150000000L;
                         if (nanosleep(&req, &rem) == -1) {
                                 if (stop_monitoring_loop)
                                         break;
@@ -2661,18 +2672,25 @@ void monitor_loop(void)
                                  			&mon_data[i]->values;
        				ipc[i]=pv->ipc;
 				base_ipc[i]=ipc[i];
-				printf("ipc[%d]:%lf,",i,ipc[i]);
+				printf("base_ipc[%d]:%lf,",i,ipc[i]);
 			}
 			printf("\n");
 			
 			//2.hierarchical clustering
+			int init = 1;
 			int level = 1;
 			double progress = 1;
 			int rest_num = 8;
-			while((progress > 0 || throttle_index > 0) && rest_num >=3 ){
+			double pre_ws = 8;
+			double best_ws = 8;
+			int best_index = 0;
+			while( init || (best_index > 0 && rest_num >=3) ){
+				if(init) init = 0;
 				throttle_index = 1;
+				best_index = 0;
 
 				if(onedim_cluster(BW,core_class,index,rest_num,level)==0) break;
+				else pre_phase_change=1;
                         	//3.heuristic throttling
                         	rest_num = 0;
 				for(i=0;i<display_num;i++)
@@ -2682,7 +2700,7 @@ void monitor_loop(void)
 					}
 
 						
-				while(progress > 0 && throttle_index < 7){
+				while( throttle_index < 7){
                         		int j=0;
                         		j+=sprintf(tmp+j,"pqos -e \"");
                         		for(i=0;i<display_num;i++){
@@ -2709,7 +2727,7 @@ void monitor_loop(void)
                         		memset(&rem, 0, sizeof(rem));
                         		memset(&req, 0, sizeof(req));
 
-                        		req.tv_nsec = 5000000L;
+                        		req.tv_nsec = 150000000L;
                                 	        if (nanosleep(&req, &rem) == -1) {
                                 		if (stop_monitoring_loop)
                                         		break;
@@ -2745,18 +2763,20 @@ void monitor_loop(void)
 						printf("ipc[%d]:%lf,",i,ipc[i]);
                        			}
 					printf("\n");
-					progress= cur_ws -ws;
-					printf("progress:%lf\n",progress);
-					ws=cur_ws;
+					if(cur_ws > best_ws){
+						best_ws = cur_ws;
+						best_index = throttle_index-1;
+					}
+					printf("throttle:%d,best_index:%d,cur_ws:%lf,best_ws:%lf\n",throttle_value[throttle_index-1],best_index,cur_ws,best_ws);
+					//ws=cur_ws;
 				}
-				if(progress < 0){
+				if(best_index != 0 && best_index!= throttle_index-1){
 					//roll back
-					throttle_index--;
 					int j=0;
                         		j+=sprintf(tmp+j,"pqos -e \"");
                         		for(i=0;i<display_num;i++){
                                 		if(core_class[i]==level-1)
-                                			j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[throttle_index]);
+                                			j+=sprintf(tmp+j,"mba:%d=%d;",i,throttle_value[best_index]);
                         		}
                         		j+=sprintf(tmp+j,"\"");
                         		system(tmp);

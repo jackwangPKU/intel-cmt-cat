@@ -2518,10 +2518,11 @@ void monitor_loop(void)
 	double pre_ipc[DATA_SIZE];
 	double ipc[DATA_SIZE];
 	double base_ipc[DATA_SIZE];
+	double best_ipc[DATA_SIZE];
 	int core_class[DATA_SIZE]={0};
 	int num=0;
 	int in_phase=0;
-	int throttle_value[7]={100,60,50,40,30,20,10};
+	int throttle_value[3]={100,30,10};
 	int throttle_index=0;
 	//double ws=8;
 	double progress =1;
@@ -2529,7 +2530,10 @@ void monitor_loop(void)
 	char tmp[300];
 	int phase_change=0;
 	int pre_phase_change=0;
-	int first_time =1;
+	int warmup =2;
+	int firsttime =1;
+	struct timeval mon_start, mon_end;
+	gettimeofday(&mon_start, NULL);
         while (!stop_monitoring_loop) {
                 struct timeval tv_e;
                 struct tm *ptm = NULL;
@@ -2544,6 +2548,11 @@ void monitor_loop(void)
                         free(mon_data);
                         return;
                 }
+		
+		gettimeofday(&mon_end, NULL); 
+		double diff =  timeval_to_usec(&mon_end) - timeval_to_usec(&mon_start);
+		gettimeofday(&mon_start, NULL); 
+
                 memcpy(mon_data, mon_grps, mon_number * sizeof(mon_grps[0]));
 
                 if (sel_mon_top_like)
@@ -2569,13 +2578,13 @@ void monitor_loop(void)
 
                 if (istext)
                         fprintf(fp_monitor, "TIME %s\n%s", cb_time, header);
-
+		double mon_coeff = 1.0 * 1000000 / diff;
                 for (i = 0; i < display_num; i++) {
                         const struct pqos_event_values *pv =
                                  &mon_data[i]->values;
                         double llc = bytes_to_kb(pv->llc);
-                        double mbr = bytes_to_mb(pv->mbm_remote_delta) * coeff;
-                        double mbl = bytes_to_mb(pv->mbm_local_delta) * coeff;
+                        double mbr = bytes_to_mb(pv->mbm_remote_delta) * mon_coeff;
+                        double mbl = bytes_to_mb(pv->mbm_local_delta) * mon_coeff;
                         //assignment
                         pre_ipc[i]=ipc[i];
 			pre_BW[i]=BW[i];
@@ -2613,17 +2622,17 @@ void monitor_loop(void)
 		phase_change=0;
 
 		for(i=0;i<display_num;i++)
-			if(BW[i]-pre_BW[i]>0.5*pre_BW[i] || pre_BW[i]-BW[i]>0.5*pre_BW[i]){
+			if(ipc[i]-pre_ipc[i]>0.5*pre_ipc[i] || pre_ipc[i]-ipc[i]>0.5*pre_ipc[i]){
 				phase_change=1;
 				break;
 			}
-		/*if(first_time){
-			phase_change=0;first_time=0;
+		if(warmup > 0){
+			warmup--;
 		}
-		if(pre_phase_change){
-			pre_phase_change=0;
-		}
-		else */if (phase_change){
+		else if (firsttime==1 || phase_change){
+			if(firsttime==1) firsttime=0;
+			struct timeval init_start, init_end;
+			double init_coeff;
 			//pre_phase_change=1;		
 			//start scheduling
 			printf("start scheduling\n");
@@ -2632,16 +2641,29 @@ void monitor_loop(void)
                         j+=sprintf(tmp+j,"pqos -e \"");
                         for(i=0;i<display_num;i++){
                                 j+=sprintf(tmp+j,"mba:%d=%d;",i,100);
+				index[i]=i;
+				core_class[i]=0;
                         }
                         j+=sprintf(tmp+j,"\"");
                         system(tmp);
+			//refresh performance counter
+			ret = pqos_mon_poll(mon_grps, mon_number);
+                			
+			if (ret != PQOS_RETVAL_OK) {
+                        	printf("Failed to poll monitoring data!\n");
+                        	free(mon_grps);
+                        	free(mon_data);
+                        	return;
+                	}
+			//start recording start_time to calculate correct BW for clutering
+			//localtime(&init_start.tv_sec);
 
 			struct timespec req, rem;
 
                         memset(&rem, 0, sizeof(rem));
                         memset(&req, 0, sizeof(req));
 
-                        req.tv_nsec = 150000000L;
+                        req.tv_nsec = 15000000L;
                         if (nanosleep(&req, &rem) == -1) {
                                 if (stop_monitoring_loop)
                                         break;
@@ -2649,9 +2671,13 @@ void monitor_loop(void)
                                 memset(&rem, 0, sizeof(rem));
                                 nanosleep(&req, &rem);
                         }
-			
+
+			//localtime(&init_end.tv_sec);			
+			init_coeff = 1.0 * 1000 / 150;
+			//printf("init_coeff:%lf\n",init_coeff);
 			ret = pqos_mon_poll(mon_grps, mon_number);
-                			
+                	gettimeofday(&mon_start, NULL); 
+
 			if (ret != PQOS_RETVAL_OK) {
                         	printf("Failed to poll monitoring data!\n");
                         	free(mon_grps);
@@ -2672,7 +2698,9 @@ void monitor_loop(void)
                                  			&mon_data[i]->values;
        				ipc[i]=pv->ipc;
 				base_ipc[i]=ipc[i];
-				printf("base_ipc[%d]:%lf,",i,ipc[i]);
+				best_ipc[i]=ipc[i];
+				BW[i] = bytes_to_mb(pv->mbm_local_delta) * init_coeff;
+				printf("base_ipc[%d]:%lf, BW[%d]:%lf",i,ipc[i],i,BW[i]);
 			}
 			printf("\n");
 			
@@ -2684,7 +2712,7 @@ void monitor_loop(void)
 			double pre_ws = 8;
 			double best_ws = 8;
 			int best_index = 0;
-			while( init || (best_index > 0 && rest_num >=3) ){
+			while( ( init || (best_index > 0 && rest_num >=3)) && level < 3 ){
 				if(init) init = 0;
 				throttle_index = 1;
 				best_index = 0;
@@ -2700,7 +2728,7 @@ void monitor_loop(void)
 					}
 
 						
-				while( throttle_index < 7){
+				while( throttle_index < 3){
                         		int j=0;
                         		j+=sprintf(tmp+j,"pqos -e \"");
                         		for(i=0;i<display_num;i++){
@@ -2727,7 +2755,7 @@ void monitor_loop(void)
                         		memset(&rem, 0, sizeof(rem));
                         		memset(&req, 0, sizeof(req));
 
-                        		req.tv_nsec = 150000000L;
+                        		req.tv_nsec = 15000000L;
                                 	        if (nanosleep(&req, &rem) == -1) {
                                 		if (stop_monitoring_loop)
                                         		break;
@@ -2737,6 +2765,8 @@ void monitor_loop(void)
                         		}
 					//poll current performance data
 					ret = pqos_mon_poll(mon_grps, mon_number);
+					gettimeofday(&mon_start, NULL); 
+
                 			if (ret != PQOS_RETVAL_OK) {
                         			printf("Failed to poll monitoring data!\n");
                         			free(mon_grps);
@@ -2763,9 +2793,12 @@ void monitor_loop(void)
 						printf("ipc[%d]:%lf,",i,ipc[i]);
                        			}
 					printf("\n");
-					if(cur_ws > best_ws){
+					if(cur_ws > best_ws){//update best_ws and best_ipc
 						best_ws = cur_ws;
 						best_index = throttle_index-1;
+						for (i = 0; i < display_num; i++) {
+							best_ipc[i]=ipc[i];
+						}
 					}
 					printf("throttle:%d,best_index:%d,cur_ws:%lf,best_ws:%lf\n",throttle_value[throttle_index-1],best_index,cur_ws,best_ws);
 					//ws=cur_ws;
@@ -2780,11 +2813,18 @@ void monitor_loop(void)
                         		}
                         		j+=sprintf(tmp+j,"\"");
                         		system(tmp);
+					//refresh performance counter
+					ret = pqos_mon_poll(mon_grps, mon_number);
+					gettimeofday(&mon_start, NULL); 
 				}
 				//enter the next level
 				level++;					
 			}
-			printf("class num: %d, class:",level);
+			for (i = 0; i < display_num; i++) {
+                        	ipc[i]=best_ipc[i];
+                        }
+
+			printf("Time %s,classnum: %d,class:",cb_time,level);
 			int k=0;
 			for(k=0;k<display_num;k++){printf(" %d",core_class[k]);}
 			printf("\n");

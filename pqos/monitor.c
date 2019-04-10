@@ -2522,7 +2522,7 @@ void monitor_loop(void)
 	int core_class[DATA_SIZE]={0};
 	int num=0;
 	int in_phase=0;
-	int throttle_value[3]={100,30,10};
+	int throttle_value[4]={100,30,20,10};
 	int throttle_index=0;
 	//double ws=8;
 	double progress =1;
@@ -2712,7 +2712,7 @@ void monitor_loop(void)
 			double pre_ws = 8;
 			double best_ws = 8;
 			int best_index = 0;
-			while( ( init || (best_index > 0 && rest_num >=3)) && level < 3 ){
+			while( ( init || (best_index > 0 && rest_num >=3)) && level < 6 ){
 				if(init) init = 0;
 				throttle_index = 1;
 				best_index = 0;
@@ -2728,7 +2728,7 @@ void monitor_loop(void)
 					}
 
 						
-				while( throttle_index < 3){
+				while( throttle_index < 4){
                         		int j=0;
                         		j+=sprintf(tmp+j,"pqos -e \"");
                         		for(i=0;i<display_num;i++){
@@ -2824,7 +2824,7 @@ void monitor_loop(void)
                         	ipc[i]=best_ipc[i];
                         }
 
-			printf("Time %s,classnum: %d,class:",cb_time,level);
+			printf("Time %s,classnum: %d, best_ws:%lf,class:",cb_time,level,best_ws);
 			int k=0;
 			for(k=0;k<display_num;k++){printf(" %d",core_class[k]);}
 			printf("\n");

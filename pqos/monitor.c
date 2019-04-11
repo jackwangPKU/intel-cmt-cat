@@ -2536,7 +2536,7 @@ void monitor_loop(void)
 	int core_class[DATA_SIZE]={0};
 	int num=0;
 	int in_phase=0;
-	int throttle_value[8]={100,90,60,50,40,30,20,10};
+	int throttle_value[4]={100,60,30,10};
 	int throttle_index=0;
 	//double ws=8;
 	double progress =1;

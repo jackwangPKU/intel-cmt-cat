@@ -248,6 +248,20 @@ int onedim_cluster(double* bw, int* c, int* index, int n, int level){
 	return 1;
 }
 
+void no_cluster(double* bw, int*c, int* index, int n, int level){
+	int max_index=0;
+	int i=0;
+	while(i<n){
+		if(bw[index[i]]>bw[index[max_index]]) max_index=i;
+		i++;
+	}
+	i=0;
+	while(i<n){
+		if(i==max_index) c[index[i]]=level-1;
+		else c[index[i]]=level;
+		i++;
+	}
+}
 /*
  * @brief Scale byte value up to KB
  *
@@ -2522,7 +2536,7 @@ void monitor_loop(void)
 	int core_class[DATA_SIZE]={0};
 	int num=0;
 	int in_phase=0;
-	int throttle_value[4]={100,30,20,10};
+	int throttle_value[8]={100,90,60,50,40,30,20,10};
 	int throttle_index=0;
 	//double ws=8;
 	double progress =1;
@@ -2716,9 +2730,9 @@ void monitor_loop(void)
 				if(init) init = 0;
 				throttle_index = 1;
 				best_index = 0;
-
-				if(onedim_cluster(BW,core_class,index,rest_num,level)==0) break;
-				else pre_phase_change=1;
+				no_cluster(BW,core_class,index,rest_num,level);
+				//if(onedim_cluster(BW,core_class,index,rest_num,level)==0) break;
+				//else pre_phase_change=1;
                         	//3.heuristic throttling
                         	rest_num = 0;
 				for(i=0;i<display_num;i++)
@@ -2728,7 +2742,7 @@ void monitor_loop(void)
 					}
 
 						
-				while( throttle_index < 4){
+				while( throttle_index < 8){
                         		int j=0;
                         		j+=sprintf(tmp+j,"pqos -e \"");
                         		for(i=0;i<display_num;i++){
